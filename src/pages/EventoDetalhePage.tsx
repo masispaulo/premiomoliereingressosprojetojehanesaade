@@ -3,8 +3,9 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { AlaModal } from "../components/AlaModal";
 import { MapaAssentos } from "../components/MapaAssentos";
 import { type Ala, alas, getAla } from "../data/alas";
-import { assentosPorId, indisponivel, lerReservados, salvarReservados } from "../data/assentos";
-import { Evento, Setor, formatData, formatMoeda, getEventoById, setorLabels } from "../data/eventos";
+import { assentosPorId, indisponivel } from "../data/assentos";
+import { buscarOcupacao, confirmarLugares, liberarLugares, segurarLugares } from "../lib/bilheteria-api";
+import { Evento, PRECO_MEIA, Setor, formatData, formatMoeda, getEventoById, rotuloPrecoIngresso, setorLabels } from "../data/eventos";
 import { linksInstitucionais } from "../data/premio-moliere";
 import { blocosReservados, lugaresReservadosNoSetor, setorTotalmenteReservado } from "../data/reservas-previas";
 
@@ -27,34 +28,39 @@ function EventoCompra({ evento, alaInicial }: { evento: Evento; alaInicial?: Ala
   const [janelaAla, setJanelaAla] = useState<Ala | null>(null);
   const [etapa, setEtapa] = useState<Etapa>(alaInicial ? "lugares" : "configurar");
   const [selecionados, setSelecionados] = useState<string[]>([]);
-  const [reservados, setReservados] = useState<string[]>(() => lerReservados(evento.id, evento.sessoes[0].id));
+  const [reservados, setReservados] = useState<string[]>([]);
   const [aviso, setAviso] = useState("");
   const svgRef = useRef<SVGSVGElement>(null);
   const sessao = evento.sessoes.find((item) => item.id === sessaoId)!;
 
+  async function sincronizarOcupacao() {
+    const dados = await buscarOcupacao(evento.id, sessaoId);
+    if (!dados) {
+      setAviso("Bilheteria online indisponível no momento. Tente de novo em instantes ou fale com a produção.");
+      return;
+    }
+    setReservados(dados.ocupados);
+    setSelecionados((atual) => {
+      const validos = atual.filter((id) => !dados.ocupados.includes(id));
+      if (validos.length !== atual.length) {
+        setAviso("Um ou mais lugares acabaram de ser escolhidos por outra pessoa. Selecione outros no mapa.");
+        setEtapa("lugares");
+      }
+      return validos;
+    });
+  }
+
   useEffect(() => {
-    setReservados(lerReservados(evento.id, sessaoId));
     setSelecionados([]);
     setAviso("");
+    void sincronizarOcupacao();
   }, [evento.id, sessaoId]);
 
   useEffect(() => {
-    function atualizarDisponibilidade(event: StorageEvent) {
-      if (event.key !== `palco-rio:demo:${evento.id}:${sessaoId}`) return;
-      const ocupados = lerReservados(evento.id, sessaoId);
-      setReservados(ocupados);
-      setSelecionados((atual) => {
-        const validos = atual.filter((id) => !indisponivel(evento.id, sessaoId, id, ocupados));
-        if (validos.length !== atual.length) {
-          setAviso("A disponibilidade mudou em outra aba. Revise seus lugares antes de continuar.");
-          setEtapa("lugares");
-        }
-        return validos;
-      });
-    }
-    window.addEventListener("storage", atualizarDisponibilidade);
-    return () => window.removeEventListener("storage", atualizarDisponibilidade);
-  }, [evento.id, sessaoId]);
+    if (etapa !== "lugares" && etapa !== "revisao") return;
+    const timer = window.setInterval(() => { void sincronizarOcupacao(); }, 2000);
+    return () => window.clearInterval(timer);
+  }, [etapa, evento.id, sessaoId]);
 
   const itens = useMemo(() => selecionados.map((id) => assentosPorId.get(id)!).filter(Boolean), [selecionados]);
   const total = itens.reduce((soma, item) => soma + evento.precos[item.setor], 0);
@@ -62,6 +68,7 @@ function EventoCompra({ evento, alaInicial }: { evento: Evento; alaInicial?: Ala
   const contagens = setoresResumo.map((setor) => ({ setor, quantidade: itens.filter((item) => item.setor === setor).length }));
 
   function trocarAla(nova: Ala | null) {
+    if (etapa === "revisao" && selecionados.length) void liberarLugares(evento.id, sessaoId, selecionados);
     setAla(nova);
     setSelecionados([]);
     setAviso("");
@@ -80,9 +87,7 @@ function EventoCompra({ evento, alaInicial }: { evento: Evento; alaInicial?: Ala
   }
 
   function conferirDisponibilidade(): boolean {
-    const atuais = lerReservados(evento.id, sessaoId);
-    setReservados(atuais);
-    const validos = selecionados.filter((id) => !indisponivel(evento.id, sessaoId, id, atuais));
+    const validos = selecionados.filter((id) => !indisponivel(evento.id, sessaoId, id, reservados));
     if (validos.length !== selecionados.length) {
       setSelecionados(validos);
       setEtapa("lugares");
@@ -92,21 +97,38 @@ function EventoCompra({ evento, alaInicial }: { evento: Evento; alaInicial?: Ala
     return true;
   }
 
-  function finalizar() {
-    if (selecionados.length !== quantidade || !conferirDisponibilidade()) return;
-    try {
-      const atuais = lerReservados(evento.id, sessaoId);
-      if (selecionados.some((id) => indisponivel(evento.id, sessaoId, id, atuais))) {
-        conferirDisponibilidade();
-        return;
-      }
-      salvarReservados(evento.id, sessaoId, [...new Set([...atuais, ...selecionados])]);
-      setReservados([...new Set([...atuais, ...selecionados])]);
-      setAviso("");
-      setEtapa("concluido");
-    } catch {
-      setAviso("Não foi possível salvar a simulação neste navegador. Tente novamente com o armazenamento local habilitado.");
+  async function irParaRevisao() {
+    if (!conferirDisponibilidade()) return;
+    const hold = await segurarLugares(evento.id, sessaoId, selecionados);
+    if (!hold.ok) {
+      setAviso(hold.error);
+      await sincronizarOcupacao();
+      return;
     }
+    setReservados(hold.ocupados);
+    setAviso("");
+    setEtapa("revisao");
+  }
+
+  async function finalizar() {
+    if (selecionados.length !== quantidade || !conferirDisponibilidade()) return;
+    const resultado = await confirmarLugares(evento.id, sessaoId, selecionados);
+    if (!resultado.ok) {
+      setAviso(resultado.error);
+      await sincronizarOcupacao();
+      setEtapa("lugares");
+      return;
+    }
+    setReservados(resultado.ocupados);
+    setAviso("");
+    setEtapa("concluido");
+  }
+
+  async function voltarParaLugares() {
+    if (selecionados.length) await liberarLugares(evento.id, sessaoId, selecionados);
+    await sincronizarOcupacao();
+    setEtapa("lugares");
+    setAviso("");
   }
 
   function baixarPlanta() {
@@ -126,9 +148,9 @@ function EventoCompra({ evento, alaInicial }: { evento: Evento; alaInicial?: Ala
 
   if (etapa === "concluido") {
     return <section className="receipt">
-      <span className="eyebrow">DEMONSTRAÇÃO CONCLUÍDA</span>
-      <h1>Seus lugares foram marcados no exemplo.</h1>
-      <p>Isso não é uma compra nem uma reserva oficial. Nenhum pagamento foi processado.</p>
+      <span className="eyebrow">RESERVA CONFIRMADA</span>
+      <h1>Seus lugares foram garantidos nesta sessão.</h1>
+      <p>Pagamento ainda será integrado na próxima fase — estes lugares já não aparecem para outras pessoas.</p>
       <div className="receipt__details"><strong>{evento.titulo}</strong><span>{formatData(sessao.data)} às {sessao.horario}</span><span>{itens.map((item) => `${item.local} · ${item.numero}`).join(" / ")}</span><b>Total ilustrativo: {formatMoeda(total)}</b></div>
       <Link to="/ingressos" className="button button--dark">Voltar aos ingressos <span aria-hidden="true">↗</span></Link>
     </section>;
@@ -170,7 +192,7 @@ function EventoCompra({ evento, alaInicial }: { evento: Evento; alaInicial?: Ala
     </div> : <div className="selection-layout">
       {ala && !ala.mapeada ? <SetorSemPlanta ala={ala} evento={evento} sessaoId={sessaoId} quantidade={quantidade} /> : <section className="map-panel panel">
         <div className="map-panel__head"><div><span className="eyebrow">THEATRO MUNICIPAL · PAVIMENTO TÉRREO{ala ? ` · ${ala.nome.toUpperCase()}` : ""}</span><h2>{etapa === "revisao" ? "Confira sua escolha" : ala ? `Lugares — ${ala.nome}` : "Escolha seus lugares"}</h2><p>{ala ? `${ala.capacidadeNota}. Somente os lugares deste setor estão ativos; os demais aparecem apagados.` : "Plateia (fileiras A–Q) e frisas para a noite de gala. Lado par à esquerda, ímpar à direita."}</p></div><div className="zoom-controls" aria-label="Controles de visualização"><span>MAPA INTERATIVO</span><button type="button" className="text-link" onClick={baixarPlanta}>Baixar SVG ↗</button></div></div>
-        <div className="legend"><span><i className="legend__dot legend__dot--free" /> Disponível</span><span><i className="legend__dot legend__dot--selected" /> Selecionado</span><span><i className="legend__dot legend__dot--occupied" /> Indisponível</span><span><i className="legend__dot legend__dot--previo" /> Reservado pela produção</span>{ala && <span><i className="legend__dot legend__dot--fora" /> Fora da ala</span>}</div>
+        <div className="legend"><span><i className="legend__dot legend__dot--free" /> Disponível</span><span><i className="legend__dot legend__dot--selected" /> Selecionado</span><span><i className="legend__dot legend__dot--occupied" /> Vendido / em escolha</span><span><i className="legend__dot legend__dot--previo" /> Reservado pela produção</span>{ala && <span><i className="legend__dot legend__dot--fora" /> Fora da ala</span>}</div>
         <div className="map-scroll"><MapaAssentos svgRef={svgRef} eventoId={evento.id} sessaoId={sessaoId} reservados={reservados} selecionados={selecionados} filtroSetor={ala?.id ?? null} aoSelecionar={etapa === "revisao" ? () => { setEtapa("lugares"); setAviso("Volte ao mapa para alterar seus lugares."); } : selecionar} /></div>
         <div className="map-panel__foot"><span>Deslize lateralmente para ampliar a visualização no celular.</span><span>Planta esquemática · sem escala · sujeita à validação da produção</span></div>
       </section>}
@@ -182,10 +204,10 @@ function EventoCompra({ evento, alaInicial }: { evento: Evento; alaInicial?: Ala
           {itens.length ? <ul>{itens.map((item) => <li key={item.id}><span><b>{setorLabels[item.setor]}</b><small>{item.local} · Lugar {item.numero}</small></span><span>{formatMoeda(evento.precos[item.setor])}</span>{etapa === "lugares" && <button type="button" aria-label={`Remover ${item.local}, lugar ${item.numero}`} onClick={() => selecionar(item.id)}>×</button>}</li>)}</ul> : <p>Seus lugares aparecerão aqui.</p>}
         </div>
         {ala && <div className="summary__line summary__ala"><span>Ala escolhida</span><strong>{ala.nome}</strong></div>}
-        <div className="summary__prices"><span>Valores por setor</span>{setoresResumo.map((setor) => <div key={setor}><span>{setorLabels[setor]}{contagens.find((item) => item.setor === setor)!.quantidade > 0 ? ` · ${contagens.find((item) => item.setor === setor)!.quantidade}×` : ""}</span><span>{setorTotalmenteReservado(setor) ? "mediante convite" : `desde ${formatMoeda(evento.precos[setor])}`}</span></div>)}</div>
+        <div className="summary__prices"><span>Valores por setor</span>{setoresResumo.map((setor) => <div key={setor}><span>{setorLabels[setor]}{contagens.find((item) => item.setor === setor)!.quantidade > 0 ? ` · ${contagens.find((item) => item.setor === setor)!.quantidade}×` : ""}</span><span>{setorTotalmenteReservado(setor) ? "mediante convite" : rotuloPrecoIngresso(evento.precos[setor], PRECO_MEIA)}</span></div>)}</div>
         <div className="summary__total"><span>Total ilustrativo</span><strong>{formatMoeda(total)}</strong></div>
         {aviso && <p className="notice" role="alert">{aviso}</p>}
-        {etapa === "lugares" ? <button className="button button--dark button--wide" disabled={selecionados.length !== quantidade} onClick={() => { if (conferirDisponibilidade()) { setEtapa("revisao"); setAviso(""); } }}>Revisar escolha <span aria-hidden="true">→</span></button> : <><button className="button button--dark button--wide" onClick={finalizar}>Confirmar lugares <span aria-hidden="true">→</span></button><button type="button" className="text-link summary__back" onClick={() => { setEtapa("lugares"); setAviso(""); }}>Voltar e alterar lugares</button></>}
+        {etapa === "lugares" ? <button className="button button--dark button--wide" disabled={selecionados.length !== quantidade} onClick={() => { void irParaRevisao(); }}>Revisar escolha <span aria-hidden="true">→</span></button> : <><button className="button button--dark button--wide" onClick={() => { void finalizar(); }}>Confirmar lugares <span aria-hidden="true">→</span></button><button type="button" className="text-link summary__back" onClick={() => { void voltarParaLugares(); }}>Voltar e alterar lugares</button></>}
         <p className="summary__disclaimer">Bilheteria em estruturação — Projeto Cultural Molière · Maison Dijon. Disponibilidade e valores sujeitos à validação final; pagamento será integrado na próxima fase.</p>
       </aside>
     </div>}

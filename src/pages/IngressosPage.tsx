@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { AlasGrid } from "../components/AlasGrid";
-import { eventos, formatData, formatMoeda } from "../data/eventos";
+import { eventos, formatData, rotuloPrecoIngresso } from "../data/eventos";
 
 export function IngressosPage() {
   return (
@@ -43,8 +43,9 @@ export function IngressosPage() {
                   <h2>{evento.titulo}</h2>
                   <p>{evento.subtitulo}</p>
                   <div className="dj-event__meta">
-                    <span>Plateia desde {formatMoeda(evento.precos.plateia)}</span>
-                    <span>Frisas desde {formatMoeda(evento.precos.frisa)}</span>
+                    <span>Plateia · {rotuloPrecoIngresso()}</span>
+                    <span>Frisas · {rotuloPrecoIngresso()}</span>
+                    <span>Balcão Nobre · {rotuloPrecoIngresso()}</span>
                     <span>{evento.sessoes.map((s) => formatData(s.data, { day: "2-digit", month: "short" }).replace(".", "")).join(" · ")}</span>
                   </div>
                 </div>

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { eventos, formatData, formatMoeda } from "../data/eventos";
+import { eventos, formatData, rotuloPrecoIngresso } from "../data/eventos";
 import { categoriasCompetitivas, momentosGala } from "../data/premio-moliere";
 
 export function HomePage() {
@@ -66,8 +66,9 @@ export function HomePage() {
             <h2 className="dj-h2">{gala.titulo}</h2>
             <p className="dj-text">{gala.descricao}</p>
             <ul className="dj-price-list">
-              <li><span>Plateia</span><strong>a partir de {formatMoeda(gala.precos.plateia)}</strong></li>
-              <li><span>Frisas</span><strong>a partir de {formatMoeda(gala.precos.frisa)}</strong></li>
+              <li><span>Plateia</span><strong>{rotuloPrecoIngresso()}</strong></li>
+              <li><span>Frisas</span><strong>{rotuloPrecoIngresso()}</strong></li>
+              <li><span>Balcão Nobre</span><strong>{rotuloPrecoIngresso()}</strong></li>
             </ul>
             <Link to={`/ingressos/${gala.id}`} className="dj-btn dj-btn--gold">
               Ver mapa de lugares

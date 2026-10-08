@@ -3,6 +3,10 @@ export type Setor = "plateia" | "frisa" | "camarote" | "balcao-nobre" | "balcao-
 
 export type Sessao = { id: string; data: string; horario: string };
 
+/** Valores de bilheteria (inteira / meia) — setores à venda. */
+export const PRECO_INTEIRA = 100;
+export const PRECO_MEIA = 50;
+
 export type Evento = {
   id: string;
   titulo: string;
@@ -10,6 +14,7 @@ export type Evento = {
   subtitulo: string;
   descricao: string;
   sessoes: Sessao[];
+  /** Preço inteira por setor (meia = PRECO_MEIA em todos os setores vendáveis). */
   precos: Record<Setor, number>;
   destaque: string;
 };
@@ -27,8 +32,14 @@ export const eventos: Evento[] = [
       { id: "gala-principal", data: "2027-06-14", horario: "20:00" },
       { id: "gala-pre-estreia", data: "2027-06-13", horario: "19:30" },
     ],
-    // Camarotes e Balcão Superior não são vendidos: acesso por validação de convite (valor 0).
-    precos: { plateia: 680, frisa: 920, camarote: 0, "balcao-nobre": 480, "balcao-superior": 0 },
+    // Camarotes e Balcão Superior: convite (0). Demais setores à venda: R$ 100 inteira · R$ 50 meia.
+    precos: {
+      plateia: PRECO_INTEIRA,
+      frisa: PRECO_INTEIRA,
+      "balcao-nobre": PRECO_INTEIRA,
+      camarote: 0,
+      "balcao-superior": 0,
+    },
     destaque: "2027",
   },
 ];
@@ -47,6 +58,10 @@ export const setorLabels: Record<Setor, string> = {
 
 export function formatMoeda(valor: number): string {
   return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+export function rotuloPrecoIngresso(inteira = PRECO_INTEIRA, meia = PRECO_MEIA): string {
+  return `inteira ${formatMoeda(inteira)} · meia ${formatMoeda(meia)}`;
 }
 
 export function formatData(iso: string, options?: Intl.DateTimeFormatOptions): string {

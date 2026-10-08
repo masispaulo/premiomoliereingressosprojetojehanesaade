@@ -11,6 +11,8 @@
     "exportar:planta": "node --experimental-strip-types scripts/exportar-planta.mjs"
   },
   "dependencies": {
+    "@upstash/redis": "^1.39.0",
+    "@vercel/node": "^23.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.1.0"
