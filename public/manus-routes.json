@@ -1,0 +1,9 @@
+{
+  "routes": [
+    { "path": "/", "title": "Início" },
+    { "path": "/o-premio", "title": "O Prêmio" },
+    { "path": "/a-gala", "title": "A Gala" },
+    { "path": "/ingressos", "title": "Ingressos" },
+    { "path": "/ingressos/:id", "title": "Escolha de lugares" }
+  ]
+}

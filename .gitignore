@@ -1,0 +1,11 @@
+node_modules
+dist
+*.local
+.DS_Store
+.work/
+outputs/
+.manus/
+.manus-webdev/
+*.tsbuildinfo
+
+.vercel

@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "projectId": "wdp_04cedc351cdf94553bae012c",
+  "description": "Palco Rio: site aprovado (início, programação, fluxo de ingressos). PENDENTE Manus: mapa do pavimento térreo fiel à planta em referencias-manus/01-planta-pavimento-terreo-OBRIGATORIA.jpeg — substituir MapaAssentos/assentos/plant-terreo; ignorar SVG esquemático.",
+  "managedGit": {
+    "baseCommit": "8939810b45a7a52410ef98ff0e379d9a45d5189c"
+  }
+}
